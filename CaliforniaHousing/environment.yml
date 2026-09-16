@@ -1,0 +1,12 @@
+name: ai-datascience
+channels:
+  - defaults
+dependencies:
+  - python=3.11
+  - matplotlib
+  - numpy
+  - scikit-learn
+  - pandas
+  - jupyter
+  - seaborn
+prefix: /Users/mexmex/anaconda3/envs/ai-datascience
