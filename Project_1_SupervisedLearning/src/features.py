@@ -1,4 +1,4 @@
- from __future__ import annotations
+from __future__ import annotations
 
 from collections.abc import Sequence
 from multiprocessing import Value
@@ -8,43 +8,55 @@ import pandas as pd
 from pandas.testing import assert_frame_equal
 
 BASE_NUMERIC_FEATURES = [
+    #Daily price behavior
     "OpenToCloseReturn",
     "HighLowRange",
     "GapReturn",
-    "LogReturn1D",
-    "Momentum5D",
-    "Momentum20D",
-    "Momentum60D",
-    "Volatility20D",
-    "Volatility60D",
+    "LogReturn1Day",
+    
+    #Trend
+    "Momentum5Days",
+    "Momentum20Days",
+    "Momentum60Days",
+    
+    #risk
+    "Volatility20Days",
+    "Volatility60Days",
     "VolatilityRatio20To60",
-    "CloseToMovingAverage20D",
+    "CloseToMovingAverage20Days",
+    
+    #trading activity
     "LogVolume",
-    "VolumeVs20D",
+    "VolumeVs20Days",
     "LogTurnover",
+    
+    #coporate and trading-status information
     "ExpectedDividend",
     "DaysSinceLastTrade",
     "NoTradeFlag",
     "MarketWideNoTradeFlag",
     "StockSpecificNoTradeFlag",
-    "PartialOHLCFlag",
     "HasExpectedDividend",
     "SupervisionFlag",
     "AdjustmentEventFlag",
-    "Return1DRankPct",
-    "Momentum20DRankPct",
-    "Volatility20DRankPct",
-    "IssuedSharesLog",
-    "MarketCapitalizationLog",
-    "Universe0",
+    
+    #same-day relative position
+    "Return1DayRankPct",
+    "Momentum20DaysRankPct",
+    "Volatility20DaysRankPct",
+    
+    #"IssuedSharesLog",
+    #"MarketCapitalizationLog",
+    #"Universe0",
+    
     "FinancialAgeDays",
 ]
 
 CATEGORICAL_FEATURES = [
-    "33SectorCode",
-    "17SectorCode",
-    "NewMarketSegment",
-    "NewIndexSeriesSizeCode",
+    #"33SectorCode",
+    #"17SectorCode",
+    #"NewMarketSegment",
+    #"NewIndexSeriesSizeCode",
     "Fin_DocumentType",
     "Fin_PeriodType",
     "Month",
@@ -105,14 +117,14 @@ def add_price_features(
     comparable_previous_close = previous_close * df['AdjustmentFactor'].fillna(1.0)
     
     return_raw = _safe_ratio(df['CloseForFeatures'], comparable_previous_close) - 1.0
-    df['Return1Day'] = return_raw.mask(df['NotradeFlag'].eq(1), 0.0)
+    df['Return1Day'] = return_raw.mask(df['NoTradeFlag'].eq(1), 0.0)
     df['LogReturn1Day'] = np.log1p(df['Return1Day'].where(df['Return1Day'] > -1.0))
     
     df['OpenToCloseReturn'] = _safe_ratio(df['Close'], df['Open']) - 1.0
     df['HighLowRange'] = _safe_ratio(df['High'], df['Low']) - 1.0
     
     #Overnight movement between yesterday's close and today's open
-    df['GapReturn'] = _safe_ratio(df['Open'], comparable_previous_close) 
+    df['GapReturn'] = _safe_ratio(df['Open'], comparable_previous_close) -1.0
     
     #A causal relative price index supports a moving-average feature without using adjustment factors from future rows
     cummulative_log_return = df['LogReturn1Day'].fillna(0.0).groupby(df['SecuritiesCode'], sort=False).cumsum()
@@ -124,15 +136,15 @@ def add_price_features(
     for window in windows:
         min_periods = max(2, int(np.ceil(window * 0.75))) 
         rolling_log_return = grouped_log_return.transform(
-            lambda values, w=window, ,m=min_periods: values.rolling(window=w, min_periods=m).sum())
+            lambda values, w=window, m=min_periods: values.rolling(window=w, min_periods=m).sum())
         df[f'Momentum{window}Days'] = np.expm1(rolling_log_return)
         
     
-    for window in (20,60)
+    for window in (20,60):
         min_periods = int(np.ceil(window * 0.75))
         df[f'Volatility{window}Days'] = grouped_log_return.transform(lambda values: values.rolling(window=window, min_periods=min_periods).std())
         
-    df['VolatilityRatio20To60'] = _safe_ratio(df['Volatilitywindow20Days'], df['Volatility60Days'])
+    df['VolatilityRatio20To60'] = _safe_ratio(df['Volatility20Days'], df['Volatility60Days'])
     
     moving_average_20 = df.groupby(df['SecuritiesCode'], sort=False)['CausalPriceIndex'].transform(
         lambda values: values.rolling(20,min_periods=15).mean())
@@ -145,7 +157,7 @@ def add_price_features(
     )
     df['VolumeVs20Days'] = df['LogVolume'] - log_volume_avg_20
     
-    df['LogTurnOver'] = np.log1p((df['CloseForFeatures'] * df['Volume']).clip(0))
+    df['LogTurnover'] = np.log1p((df['CloseForFeatures'] * df['Volume']).clip(0))
     
     #Same day cross-sectional ranks are available at the prediction time stamp 
     for source, output in (
@@ -153,10 +165,10 @@ def add_price_features(
         ,('Momentum20Days', 'Momentum20DaysRankPct')
         ,('Volatility20Days', 'Volatility20DaysRankPct') 
     ):
-        df['output'] = df.groupby('¨Date', sort=False)['source'].rank(pct=True) #percentile rank across share on the same day
+        df[output] = df.groupby('Date', sort=False)[source].rank(pct=True) #percentile rank across share on the same day
         
     df['Month'] = df['Date'].dt.month.astype('string')
-    df['DaysOfWeek'] = df['Date'].dt.day_of_week.astype('string')
+    df['DayOfWeek'] = df['Date'].dt.day_of_week.astype('string')
     
     df = df.replace([np.inf, -np.inf],np.nan)
     
@@ -215,12 +227,12 @@ def join_financials_asof(prices_features: pd.DataFrame, financial_disclosure: pd
     
     result['FinancialAgeDays'] = (result['Date'] - result['DisclosedDate']).dt.days
     
-    return result.sort_values('_OriginalOrder').drop(columns='_OriginalOrder').reset_index(drop=True)
+    return result.sort_values('_OriginalOrderDate').drop(columns='_OriginalOrderDate').reset_index(drop=True)
     
     
 
 
-def infer_feature_column(df: pd.DataFrame) -> tuple[list[str], list[str]]:
+def infer_feature_columns(df: pd.DataFrame) -> tuple[list[str], list[str]]:
     """ 
     Create an explicit feature contract; to avoid using every numeric columns blindly
     
@@ -291,7 +303,7 @@ def feature_missingness(df: pd.DataFrame, columns: Sequence[str]) -> pd.DataFram
             {
                 'missing_count': df[list(columns)].isna().sum()
                 ,'missing_rate': df[list(columns)].isna().mean()
-                ,'dtype': df[list(columns)].dtype.astype('string')
+                ,'dtype': df[list(columns)].dtypes.astype('string')
             }
         ).sort_values('missing_rate', ascending=False)
     )
