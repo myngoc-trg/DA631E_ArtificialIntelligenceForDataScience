@@ -1,0 +1,90 @@
+{
+  "split_report": [
+    {
+      "split": "train",
+      "rows": 1395521,
+      "dates": 731,
+      "securities_codes": 1966,
+      "date_min": "2017-01-04 00:00:00",
+      "date_max": "2019-12-26 00:00:00",
+      "target_missing": 0
+    },
+    {
+      "split": "validation",
+      "rows": 476840,
+      "dates": 241,
+      "securities_codes": 2000,
+      "date_min": "2020-01-06 00:00:00",
+      "date_max": "2020-12-28 00:00:00",
+      "target_missing": 0
+    },
+    {
+      "split": "test",
+      "rows": 452000,
+      "dates": 226,
+      "securities_codes": 2000,
+      "date_min": "2021-01-04 00:00:00",
+      "date_max": "2021-12-03 00:00:00",
+      "target_missing": 0
+    }
+  ],
+  "train_purged_dates": [
+    "2019-12-27",
+    "2019-12-30"
+  ],
+  "validation_purged_dates": [
+    "<generator object chronological_split.<locals>.<genexpr> at 0x0000021F9F441630>"
+  ],
+  "numeric_features": [
+    "OpenToCloseReturn",
+    "HighLowRange",
+    "GapReturn",
+    "LogReturn1Day",
+    "Momentum5Days",
+    "Momentum20Days",
+    "Momentum60Days",
+    "Volatility20Days",
+    "Volatility60Days",
+    "VolatilityRatio20To60",
+    "CloseToMovingAverage20Days",
+    "LogVolume",
+    "VolumeVs20Days",
+    "LogTurnover",
+    "ExpectedDividend",
+    "DaysSinceLastTrade",
+    "NoTradeFlag",
+    "MarketWideNoTradeFlag",
+    "StockSpecificNoTradeFlag",
+    "HasExpectedDividend",
+    "SupervisionFlag",
+    "AdjustmentEventFlag",
+    "Return1DayRankPct",
+    "Momentum20DaysRankPct",
+    "Volatility20DaysRankPct",
+    "FinancialAgeDays",
+    "Fin_OperatingMargin",
+    "Fin_OrdinaryMargin",
+    "Fin_ProfitMargin",
+    "Fin_ReturnOnAssets",
+    "Fin_NetSales_SignedLog",
+    "Fin_OperatingProfit_SignedLog",
+    "Fin_OrdinaryProfit_SignedLog",
+    "Fin_Profit_SignedLog",
+    "Fin_EarningsPerShare_SignedLog",
+    "Fin_TotalAssets_SignedLog",
+    "Fin_Equity_SignedLog",
+    "Fin_EquityToAssetRatio_SignedLog",
+    "Fin_BookValuePerShare_SignedLog",
+    "Fin_ResultDividendPerShareAnnual_SignedLog",
+    "Fin_ForecastDividendPerShareAnnual_SignedLog",
+    "Fin_ForecastNetSales_SignedLog",
+    "Fin_ForecastOperatingProfit_SignedLog",
+    "Fin_ForecastOrdinaryProfit_SignedLog",
+    "Fin_ForecastProfit_SignedLog",
+    "Fin_ForecastEarningsPerShare_SignedLog"
+  ],
+  "categorical_features": [
+    "Month",
+    "DayOfWeek"
+  ]
+}
