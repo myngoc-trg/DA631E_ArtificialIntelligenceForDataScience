@@ -1,0 +1,30 @@
+{
+  "selected_model": "hist_gradient_boosting",
+  "fast_mode": false,
+  "selection_metric": "Mean SpreadSharpeRatio across expanding-window folds (3 folds in total)",
+  "walk_forward_folds": [
+    {
+      "name": "validate_2018",
+      "train_end": "2017-12-31",
+      "valid_start": "2018-01-01",
+      "valid_end": "2018-12-31"
+    },
+    {
+      "name": "validate_2019",
+      "train_end": "2018-12-31",
+      "valid_start": "2019-01-01",
+      "valid_end": "2019-12-31"
+    },
+    {
+      "name": "validate_2020",
+      "train_end": "2019-12-31",
+      "valid_start": "2020-01-01",
+      "valid_end": "2020-12-31"
+    }
+  ],
+  "mean_spread_sharpe": 0.19460375097990587,
+  "std_jpx_spread_sharpe": 0.024848697847638115,
+  "mean_daily_spearman_ic": 0.010175148631067304,
+  "std_daily_spearman_ic": 0.00636031190582861,
+  "note": "Model family was selected without examining 2021 test performance."
+}

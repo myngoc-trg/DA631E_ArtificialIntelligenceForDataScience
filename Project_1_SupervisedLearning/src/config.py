@@ -22,6 +22,7 @@ class ProjectConfig:
     financial_lag_days: int=1
     market_no_trade_threshold:float = 0.9
     portfolio_size:int = 200
+    top_rank_weight_ratio: float = 2.09
     fast_train_dates: int = 378
     
     @property
