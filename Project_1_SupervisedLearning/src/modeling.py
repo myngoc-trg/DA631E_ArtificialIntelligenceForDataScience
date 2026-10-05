@@ -21,7 +21,7 @@ from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, StandardScaler
 
 
 from config import ProjectConfig
-
+import lightgbm
 
 def save_json(payload: dict, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -287,6 +287,93 @@ def build_tree_preprocessor(
         ,sparse_threshold=0.0
         ,verbose_feature_names_out=True
     )
+
+
+def order_for_daily_ranking(
+    df: pd.DataFrame    
+) -> pd.DataFrame:
+    ''' Order rows so that evert date forms one contiguous ranking group
+        Daily ranking from Target
+    '''
+
+    required = {'Date','SecuritiesCode'}
+    missing = sorted(required.difference(df.columns))
+    if missing:
+        raise ValueError(f"Prediction df is missing: {missing}")
+
+    ordered = df.sort_values(['Date','SecuritiesCode'], kind="mergesort").reset_index(drop=True)
+    if not ordered['Date'].is_monotonic_increasing:
+        raise AssertionError('Ranking data must be ordered by Date')
+    return ordered
+
+
+def make_daily_relevance_labels(
+    ordered_df : pd.DataFrame
+    ,n_relevance_bins: int= 20
+) -> np.ndarray:
+    '''Convert daily continous Target values into ordinal relevance labels (Regression to Classification)
+    
+    Label 0: the lowest daily targets
+    Label n_relevance_bins - 1: the highest daily Targets
+    '''
+
+    if n_relevance_bins < 2:
+        raise ValueError("n_relevance bins must be at least 2")
+
+    if 'Target' not in ordered_df.columns:
+        raise ValueError("Target is required when creating relevance labels")
+
+    if ordered_df['Target'].isna().any():
+        raise ValueError('Ranking training data contains missing Target')
+
+    daily_percentile = ordered_df.groupby('Date')['Target'].rank(method="average", pct=True)
+
+    relevance = np.floor(daily_percentile.to_numpy(dtype=float) * n_relevance_bins)
+    relevance = np.clip(a=relevance, a_min=0,a_max=n_relevance_bins-1) #to make sure the 1-percentile falls in the last bin
+
+    return relevance.astype('int16')
+
+def make_daily_relevance_sizes(
+    ordered_df: pd.DataFrame
+) -> np.ndarray:
+    '''Return the number of stocks belonging to each trading date
+    
+    LightGBM uses this to identify the individual ranking problems
+    '''
+
+    if not ordered_df['Date'].is_monotonic_increasing():
+        raise AssertionError("Ranking data must be ordered by Date. Order the df by Date before creating ranking group")
+
+    group_sizes = ordered_df.groupby('Date', sort=False).size()
+
+    if group_sizes.sum() != len(ordered_df):
+        raise AssertionError("Ranking group sizes do not sum to the number of rows in df")
+
+    return group_sizes
+
+
+def build_lambdarank_pipeline(
+    numeric_features: Sequence[str]
+    ,categorical_features: Sequence[str]
+    ,portfolio_size: int = 200
+    ,n_relevance_bins: int = 20
+    ,random_seed:int = 42
+    ,fast_mode:bool =True
+):
+    try:
+        from lightgbm import LGBMRanker
+    except ImportError as error:
+        raise ImportError(
+            "LightGBM is required for LambdaRank"
+            "Install it with: python -m pip install lightgbm"
+        ) from error
+
+    model = LGBMRanker(
+        objective ="lambdarank"
+        ,metric="ndcg" "evaluate ranking, rewarding high-relevance stocks near the top. Higher NDCG is better"
+
+    )
+    return 
     
 def build_model_pipeline(
     model_name: str
@@ -350,7 +437,6 @@ def rank_prediction(prediction_df: pd.DataFrame) -> pd.DataFrame:
     ranked['Rank'] = ranked.groupby('Date',sort=False).cumcount().astype("int32")
     return ranked.sort_values(['Date','SecuritiesCode']).reset_index(drop=True)
 
-#def daily_information_coefficient
 
 def _spread_return_one_day(
     day: pd.DataFrame
@@ -469,7 +555,7 @@ def evaluate_predictions(
     
     metrics = pd.Series({
         'MAE': mean_absolute_error(y_true, y_pred)
-        ,'RMSE': mean_squared_error(y_true,y_pred)
+        ,'MSE': mean_squared_error(y_true,y_pred)
         ,'R2': r2_score(y_true,y_pred)
         ,'MeanDailyIC': daily_ic.mean()
         ,'MedianDailyIC': daily_ic.median()
