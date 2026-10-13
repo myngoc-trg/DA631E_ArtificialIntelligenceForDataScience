@@ -208,11 +208,11 @@ def join_financials_asof(prices_features: pd.DataFrame, financial_disclosure: pd
     right = financial_disclosure.sort_values(['FinancialAvailableDate','SecuritiesCode'])
     
     result = pd.merge_asof(left=left, right=right,
-                           left_on='Date'
-                           ,right_on='FinancialAvailableDate'
-                           ,by='SecuritiesCode'
-                           ,direction='backward'
-                           ,allow_exact_matches=True)
+                        left_on='Date'
+                        ,right_on='FinancialAvailableDate'
+                        ,by='SecuritiesCode'
+                        ,direction='backward'
+                        ,allow_exact_matches=True)
     
     rows_after = len(result)
     if rows_after != rows_before:

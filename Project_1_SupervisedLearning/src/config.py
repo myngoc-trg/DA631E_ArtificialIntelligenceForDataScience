@@ -75,3 +75,26 @@ def find_project_root(start: Path = Path.cwd()) -> Path:
             return candidate
 
     raise FileNotFoundError("Could not find src/data.py")
+
+@dataclass(frozen=True)
+class Candidate:
+    name: str
+    model_name: str
+    params: dict[str, Any]
+    
+    
+@dataclass
+class TuningResults:
+    fold_results: pd.DataFrame
+    summary: pd.DataFrame
+    daily_ic_record: dict
+    daily_spread_record: dict
+    candidates: dict[str, Candidate]
+
+    def best_candidate(self, model_name: str | None = None) -> Candidate:
+        rows = self.summary
+        if model_name is not None:
+            rows = rows.loc[rows["model_name"].eq(model_name)]
+        if rows.empty:
+            raise ValueError(f"No results for model_name={model_name!r}.")
+        return self.candidates[rows.index[0]]

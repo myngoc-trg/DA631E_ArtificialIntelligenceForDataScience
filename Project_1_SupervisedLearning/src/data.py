@@ -341,7 +341,6 @@ def clean_financials(df: pd.DataFrame, availability_lag_days:int =1) -> tuple[pd
     df['Fin_OrdinaryMargin'] = _optional_ratio(df, 'OrdinaryProfit', 'NetSales')
     df['Fin_ProfitMargin'] = _optional_ratio(df, 'Profit', 'NetSales')
     df['Fin_ReturnOnAssets'] = _optional_ratio(df, 'Profit', 'TotalAssets')
-    df['Fin_ReturnOnAssets'] = _optional_ratio(df, 'Equity', 'TotalAssets')
     
     for col in numeric_cols:
         values = df[col]
