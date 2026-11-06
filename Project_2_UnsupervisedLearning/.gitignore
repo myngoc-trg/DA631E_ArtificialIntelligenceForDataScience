@@ -1,0 +1,5 @@
+# Generated datasets, experiment results and local backups
+/output/
+/archive/
+/data/processed/
+/models/
