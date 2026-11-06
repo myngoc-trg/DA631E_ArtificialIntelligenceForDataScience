@@ -90,7 +90,9 @@ def add_price_features(
     """
     Create features using information available NO LATER THAN each row's Date
     
-    The split adjustment is applied to the previous close when calculating the current one-day return.
+    Kaggle's factor is dated on the last pre-adjustment observation. Apply the
+    previous observation's factor within each stock to the previous close.
+    This aligns returns and gaps with the next observation's price basis.
     Unlike a reverse cumulative adjusted price, appending a future split cannot rewrite historical feature value
     """
     
@@ -114,7 +116,9 @@ def add_price_features(
     df = prices.copy().sort_values(['SecuritiesCode', 'Date']).reset_index(drop=True)
     by_code = df.groupby('SecuritiesCode', sort=False)
     previous_close = by_code['CloseForFeatures'].shift(1)
-    comparable_previous_close = previous_close * df['AdjustmentFactor'].fillna(1.0)
+    # Kaggle records the factor on the last pre-adjustment observation.
+    previous_adjustment_factor = by_code['AdjustmentFactor'].shift(1).fillna(1.0)
+    comparable_previous_close = previous_close * previous_adjustment_factor
     
     return_raw = _safe_ratio(df['CloseForFeatures'], comparable_previous_close) - 1.0
     df['Return1Day'] = return_raw.mask(df['NoTradeFlag'].eq(1), 0.0)
