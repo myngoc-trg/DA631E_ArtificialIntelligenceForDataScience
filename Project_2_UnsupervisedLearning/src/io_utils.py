@@ -32,24 +32,26 @@ def sha256(path):
 
 
 def prepare_run(root, cfg):
-    """Create output/run_name and reject reuse with a different configuration."""
-    
-    #build experiment's output path and create the folder if it does not exist
-    out = Path(root) / "output" / cfg.run_name
-    out.mkdir(parents=True, exist_ok=True)
+    """Create the shared metadata directory with a stable automatic or custom name.
+
+    Notebook 01 uses this directory; later notebooks write to sibling output
+    directories. Reusing a custom name with different settings is rejected.
+    """
+    settings = asdict(cfg)
+    fingerprint = hashlib.sha256(
+        json.dumps(settings, sort_keys=True).encode("utf-8")
+    ).hexdigest()[:10]
+    run_name = cfg.run_name or f"experiment_{fingerprint}"
+    out = Path(root) / "output" / run_name
     config_path = out / "experiment_config.json"
-    
-    # check any previously saved configuration
-    # asdict(cfg) converts dataclass into a dictionary, which can be compared to the saved configuration
-    if config_path.exists() and read_json(config_path)["config"] != asdict(cfg):
-        raise RuntimeError("Configuration changed. Choose a new run_name and rerun notebooks 01-02.")
+    if config_path.exists() and read_json(config_path)["config"] != settings:
+        raise RuntimeError("Configuration changed. Choose a new run_name and rerun notebook 02.")
+    out.mkdir(parents=True, exist_ok=True)
     if not config_path.exists():
-        # record the config for a new run
-        write_json(config_path, {"config": asdict(cfg),
+        write_json(config_path, {"run_name": run_name, "config": settings,
                                 "row_unit": "SecuritiesCode + Date"})
-    for name in ["models", "tables", "figures"]:
-        (out / name).mkdir(exist_ok=True)
     return out
+
 
 def require_files(out, names):
     '''Check that files needed by the next step exist. If not, raise an error with a message about which files are missing.'''
@@ -95,28 +97,46 @@ def finalize_model_selection(root, out, cfg, selected_model_id, reason):
     if not reason.strip():
         raise ValueError("Write a model-selection justification before the final test.")
     root, out = Path(root), Path(out)
-    required = ["feature_catalog.csv", "feature_sets.json", "feature_filter_fit.json", "folds.csv",
-                "gmm_cv.csv", "gmm_candidates.csv", "candidate_ids.json", "final_model_fit.json",
-                "source_checksums.json", "experiment_config.json", "data_audit.json"]
-    require_files(out, required)
-    candidates = read_json(out / "candidate_ids.json")
+    output_root = out.parent
+    feature_dir = output_root / "02_time_split_and_preprocessing"
+    model_dir = output_root / "03_gmm_grid_search"
+    required = [
+        str((out / name).relative_to(output_root))
+        for name in ("source_checksums.json", "experiment_config.json", "data_audit.json")
+    ]
+    required += [str(path.relative_to(output_root)) for path in (
+        output_root / "02_time_split_and_preprocessing" / "feature_catalog.csv",
+        output_root / "02_time_split_and_preprocessing" / "feature_sets.json",
+        output_root / "02_time_split_and_preprocessing" / "feature_filter_fit.json",
+        output_root / "02_time_split_and_preprocessing" / "folds.csv",
+        output_root / "03_gmm_grid_search" / "gmm_cv.csv",
+        output_root / "03_gmm_grid_search" / "gmm_candidates.csv",
+        output_root / "03_gmm_grid_search" / "candidate_ids.json",
+        output_root / "03_gmm_grid_search" / "final_model_fit.json",
+    )]
+    require_files(output_root, required)
+    candidates = read_json(model_dir / "candidate_ids.json")
     if selected_model_id not in candidates.values():
         raise ValueError("The selected model must be in the candidate list.")
-    model_file = "models/" + selected_model_id + ".joblib"
-    require_files(out, [model_file])
+    model_file = str((model_dir / "models" / f"{selected_model_id}.joblib").relative_to(output_root))
+    require_files(output_root, [model_file])
     required.append(model_file)
-    required += [name for name in ("ward_benchmark.csv", "stability.csv") if (out / name).is_file()]
+    required += [
+        str((model_dir / name).relative_to(output_root))
+        for name in ("ward_benchmark.csv", "stability.csv")
+        if (model_dir / name).is_file()
+    ]
 
     dataset_audit = read_json(root / cfg.development_audit_path)
     if dataset_audit != read_json(out / "data_audit.json"):
         raise RuntimeError("The prepared dataset changed after this experiment started.")
-    fit_record = read_json(out / "final_model_fit.json")
+    fit_record = read_json(model_dir / "final_model_fit.json")
     expected_fit = {"selected_model_id": selected_model_id,
                     "training_start": cfg.development_start, "training_end": cfg.development_end,
                     "n_rows": dataset_audit["rows_after_filter"]}
     if any(fit_record.get(name) != value for name, value in expected_fit.items()):
         raise ValueError("Refit the selected pipeline on all development rows through development_end.")
-    feature_sets = read_json(out / "feature_sets.json")
+    feature_sets = read_json(feature_dir / "feature_sets.json")
     if fit_record.get("features") != feature_sets.get(fit_record.get("feature_set")) or not fit_record.get("features"):
         raise ValueError("Final-model features do not match the frozen feature set.")
     if sha256(root / cfg.development_features_path) != dataset_audit["dataset_sha256"]:
@@ -130,12 +150,12 @@ def finalize_model_selection(root, out, cfg, selected_model_id, reason):
     record = {
         "config": asdict(cfg), "selected_model_id": selected_model_id,
         "candidate_ids": list(candidates.values()), "reason": reason, "final_fit": fit_record,
-        "checksums": {name: sha256(out / name) for name in required},
+        "checksums": {name: sha256(output_root / name) for name in required},
         "dataset_checksums": {name: sha256(root / name) for name in (
             cfg.development_features_path, cfg.development_audit_path
         )},
         "code_checksums": {str(path.relative_to(root)): sha256(path)
-                           for path in sorted((root / "src").glob("*.py"))},
+                        for path in sorted((root / "src").glob("*.py"))},
     }
     lock = out / "selection_lock.json"
     if lock.exists() and read_json(lock) != record:
@@ -153,7 +173,8 @@ def verify_lock(out, cfg):
     if record["config"] != asdict(cfg):
         raise RuntimeError("Configuration differs from the locked experiment.")
     root = out.parents[1]
-    for base, checksums in ((out, record["checksums"]), (root, record["dataset_checksums"]),
+    output_root = out.parent
+    for base, checksums in ((output_root, record["checksums"]), (root, record["dataset_checksums"]),
                             (root, record["code_checksums"] )):
         for name, expected in checksums.items():
             if not (base / name).is_file() or sha256(base / name) != expected:

@@ -12,11 +12,17 @@ PROJECT1_ROOT = "../Project_1_SupervisedLearning"
 class ProjectConfig:
     random_seed: int = 42
     run_profile: Literal["quick", "full"] = "full"
-    run_name: str = "walk_forward_01"
-
-    development_start: str = "2017-01-01"
+    run_name: str | None = "01_data_exploration"
+    
+    train_end:str = "2019-12-31"
+    
+    valid_start: str = "2020-01-01"
+    valid_end: str = "2020-12-31"
+    
     feature_selection_end: str = "2017-12-31"
+    development_start: str = "2017-01-01"
     development_end: str = "2020-12-31"
+    
     test_start: str = "2021-01-01"
     test_end: str = "2021-12-31"
 
@@ -33,8 +39,11 @@ class ProjectConfig:
     correlation_threshold: float = 0.95
 
     def __post_init__(self):
-        if not re.fullmatch(r"[A-Za-z0-9_-]+", self.run_name):
-            raise ValueError("run_name may contain letters, digits, underscores and hyphens.")
+        if self.run_name is not None and (
+            not isinstance(self.run_name, str)
+            or not re.fullmatch(r"[A-Za-z0-9_-]+", self.run_name)
+        ):
+            raise ValueError("run_name must be None or use letters, digits, underscores and hyphens.")
         if self.run_profile not in {"quick", "full"}:
             raise ValueError("run_profile must be quick or full.")
         if type(self.min_history_days) is not int or self.min_history_days < 1:
@@ -44,14 +53,18 @@ class ProjectConfig:
                 raise ValueError(f"{name} must be between 0 and 1.")
         if not isinstance(self.pred_column, str) or not self.pred_column:
             raise ValueError("pred_column must be a non-empty string.")
-        start, selection_end, end, test_start, test_end = [
-            date.fromisoformat(getattr(self, name)) for name in (
-                "development_start", "feature_selection_end", "development_end", "test_start", "test_end"
+        development_start, feature_selection_end, train_end, development_end, test_start, test_end = [
+            date.fromisoformat(getattr(self, name))
+            for name in (
+                "development_start", "feature_selection_end", "train_end",
+                "development_end", "test_start", "test_end"
             )
         ]
-        if not start <= selection_end < end < test_start <= test_end:
+        if not development_start <= feature_selection_end <= train_end < development_end < test_start <= test_end:
             raise ValueError("Feature selection, development and test periods must be ordered.")
-        if (selection_end.month, selection_end.day) != (12, 31) or (end.month, end.day) != (12, 31):
+        if any((boundary.month, boundary.day) != (12, 31) for boundary in (
+            feature_selection_end, train_end, development_end
+        )):
             raise ValueError("Annual walk-forward folds require year-end selection and development boundaries.")
 
 
@@ -62,9 +75,9 @@ def options(cfg: ProjectConfig) -> dict:
     development dataset and the 2017 feature lists always retain all eligible rows.
     """
     if cfg.run_profile == "quick":
-        return {"k": [2, 3], "covariance": ["diag", "full"], "n_init": 2, "max_iter": 200,
-                "train_cap": 2000, "validation_cap": 1000, "benchmark_cap": 700,
-                "stability_repeats": 3, "seeds": [7, 17], "block_dates": 10}
+        return {"k": list(range(2, 7)), "covariance": ["diag", "full"], "n_init": 2, "max_iter": 200,
+                "train_cap": 50000, "validation_cap": 50000, "benchmark_cap": 700,
+                "stability_repeats": 3, "random_seeds": [24], "block_dates": 10}
     return {"k": list(range(2, 7)), "covariance": ["diag", "full"], "n_init": 5, "max_iter": 300,
             "train_cap": None, "validation_cap": None, "benchmark_cap": 2000,
-            "stability_repeats": 20, "seeds": [7, 17, 27, 37, 47], "block_dates": 20}
+            "stability_repeats": 20, "random_seeds": [4, 14, 24, 34, 44], "block_dates": 20}

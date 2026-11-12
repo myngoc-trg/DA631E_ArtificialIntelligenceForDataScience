@@ -53,6 +53,10 @@ class WalkForwardTests(unittest.TestCase):
         self.root = Path(self.directory.name)
         shutil.copytree(ROOT / "src", self.root / "src", ignore=shutil.ignore_patterns("__pycache__"))
         self.out = prepare_run(self.root, self.config)
+        self.feature_dir = self.out.parent / "02_time_split_and_preprocessing"
+        self.feature_dir.mkdir()
+        self.model_dir = self.out.parent / "03_gmm_grid_search"
+        (self.model_dir / "models").mkdir(parents=True)
         record_input_checksums(self.root, self.config, self.out)
         dataset_path = self.root / self.config.development_features_path
         dataset_path.parent.mkdir(parents=True, exist_ok=True)
@@ -109,17 +113,31 @@ class WalkForwardTests(unittest.TestCase):
                 load_daily_until(self.root, self.config, self.config.test_start, allow_holdout=True, out=self.out)
 
     def test_configuration_reuse_is_checked(self):
+        self.assertEqual(self.out.name, "01_data_exploration")
+        self.assertEqual(self.out.parent.name, "output")
+        self.assertEqual(self.feature_dir, self.root / "output" / "02_time_split_and_preprocessing")
+        self.assertEqual(self.model_dir, self.root / "output" / "03_gmm_grid_search")
+        self.assertEqual(prepare_run(self.root, self.config), self.out)
+        automatic = replace(self.config, run_name=None)
+        automatic_out = prepare_run(self.root, automatic)
+        changed_automatic = replace(automatic, correlation_threshold=0.9)
+        self.assertNotEqual(prepare_run(self.root, changed_automatic), automatic_out)
+        named = replace(self.config, run_name="feature_review")
+        self.assertEqual(prepare_run(self.root, named).name, "feature_review")
         with self.assertRaises(RuntimeError):
-            prepare_run(self.root, replace(self.config, correlation_threshold=0.9))
+            prepare_run(self.root, replace(named, correlation_threshold=0.9))
+        for invalid_name in ("", "../escape", "two/levels"):
+            with self.assertRaises(ValueError):
+                replace(self.config, run_name=invalid_name)
         with self.assertRaises(ValueError):
             replace(self.config, development_end=self.config.test_start)
 
     def test_final_lock_requires_full_development_refit(self):
         selection = self.rows.loc[self.rows.Date.le(self.config.feature_selection_end)]
         feature_sets, catalog, removed = make_feature_sets(selection, self.feature_audit["numeric_features"], self.config)
-        write_json(self.out / "feature_sets.json", feature_sets)
-        catalog.to_csv(self.out / "feature_catalog.csv")
-        write_json(self.out / "feature_filter_fit.json", {"end": str(selection.Date.max()), "n_rows": len(selection)})
+        write_json(self.feature_dir / "feature_sets.json", feature_sets)
+        catalog.to_csv(self.feature_dir / "feature_catalog.csv")
+        write_json(self.feature_dir / "feature_filter_fit.json", {"end": str(selection.Date.max()), "n_rows": len(selection)})
         scores = []
         periods = []
         for name, training, validation in chronological_folds(self.rows, self.config):
@@ -129,22 +147,22 @@ class WalkForwardTests(unittest.TestCase):
             pipeline.fit(training[feature_sets["D"]])
             scores.append({"fold": name, "validation_log_likelihood": pipeline.score(validation[feature_sets["D"]])})
             periods.append({"fold": name, "training_end": training.Date.max(), "validation_end": validation.Date.max()})
-        pd.DataFrame(scores).to_csv(self.out / "gmm_cv.csv", index=False)
-        pd.DataFrame(periods).to_csv(self.out / "folds.csv", index=False)
+        pd.DataFrame(scores).to_csv(self.model_dir / "gmm_cv.csv", index=False)
+        pd.DataFrame(periods).to_csv(self.feature_dir / "folds.csv", index=False)
         model_id = "D_protocol_check"
         pd.DataFrame([{"candidate_id": model_id, "feature_set": "D",
                        "mean_validation_log_likelihood": pd.DataFrame(scores).validation_log_likelihood.mean()}]
-                    ).to_csv(self.out / "gmm_candidates.csv", index=False)
-        write_json(self.out / "candidate_ids.json", {"D": model_id})
+                    ).to_csv(self.model_dir / "gmm_candidates.csv", index=False)
+        write_json(self.model_dir / "candidate_ids.json", {"D": model_id})
         pipeline.fit(self.rows[feature_sets["D"]])
-        joblib.dump(pipeline, self.out / "models" / f"{model_id}.joblib")
+        joblib.dump(pipeline, self.model_dir / "models" / f"{model_id}.joblib")
         fit_record = {"selected_model_id": model_id, "feature_set": "D", "features": feature_sets["D"],
                       "training_start": self.config.development_start, "training_end": "2019-12-31", "n_rows": len(self.rows)}
-        write_json(self.out / "final_model_fit.json", fit_record)
+        write_json(self.model_dir / "final_model_fit.json", fit_record)
         with self.assertRaisesRegex(ValueError, "all development rows"):
             finalize_model_selection(self.root, self.out, self.config, model_id, "Protocol verification using actual JPX observations.")
         fit_record["training_end"] = self.config.development_end
-        write_json(self.out / "final_model_fit.json", fit_record)
+        write_json(self.model_dir / "final_model_fit.json", fit_record)
         finalize_model_selection(self.root, self.out, self.config, model_id, "Protocol verification using actual JPX observations.")
         self.assertEqual(verify_lock(self.out, self.config)["selected_model_id"], model_id)
         with (self.root / "src/data.py").open("a", encoding="utf-8") as stream:

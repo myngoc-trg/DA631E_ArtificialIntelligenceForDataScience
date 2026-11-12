@@ -141,20 +141,57 @@ def load_daily_until(root, cfg, end, *, with_target=False, allow_holdout=False, 
     return d, info
 
 def balanced_sample(frame, cap: int | None, random_seed=42):
-    """Urval balanserat över datum; cap=None behåller alla rader."""
+    """Sample rows while approximately preserving each date's row proportion
+    
+    Inputs:
+    - frame : Observations containing a Date column.
+    - cap : Maximum number of rows to return. None returns all rows.
+    - random_seed :Seed used to make random sampling reproducible.
+
+    Returns
+    pandas.DataFrame
+        A copy containing the sampled rows in their original row order.
+    """
+    if cap is not None and cap < 1:
+        raise ValueError("cap must be positive or None.")
     if cap is None or len(frame) <= cap:
         return frame.copy()
     
     rng = np.random.default_rng(random_seed)
-    by_date = frame.groupby("Date", sort=True)
-    per_date = max(1, int(np.ceil(cap / frame.Date.nunique())))
-    indices = []
-    # for each date, and its Dataframe group, randomly select up to per_date rows without replacement
-    for _, group in by_date:
-        indices.extend(rng.choice(group.index.to_numpy(), size=min(len(group), per_date), replace=False))
-    if len(indices) > cap:
-        indices = rng.choice(np.asarray(indices), size=cap, replace=False)
-    return frame.loc[indices].sort_index().copy()
+    
+    # Collect the integer row positions belonging to each date.
+    groups = list(frame.groupby(
+            "Date"
+            ,sort=True
+            ,dropna=False
+        ).indices.values()
+    )
+    
+    # Count how many original observations belong to each date
+    sizes = np.array([len(group) for group in groups])
+
+    # Calculate each date's ideal share of the requested sample    
+    expected = cap * sizes / sizes.sum()
+    # Start with whole-number allocations rounded down
+    quotas = np.floor(expected).astype(int)
+
+    # Calculate how many sample places remain after rounding down
+    remaining = int(cap - quotas.sum())
+    # Rank dates from largest fractional remainder to smallest
+    order = np.argsort(-(expected - quotas))
+    # Give one additional place to each of the highest-ranked dates
+    quotas[order[:remaining]] += 1
+
+    # Randomly select rows within each date without replacement
+    selected_positions = np.concatenate([
+        rng.choice(group, size=int(quota), replace=False)
+        for group, quota in zip(groups, quotas)
+        if quota > 0
+    ])
+    # Restore the original row order and return copy
+    return frame.iloc[np.sort(selected_positions)].copy()
+
+
 
 
 def make_feature_sets(selection_rows, allowed_features, config):
